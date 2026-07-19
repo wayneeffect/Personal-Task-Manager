@@ -14,10 +14,15 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# 2. Resilient Environment Isolation (Render Persistent Storage vs. Local Testing)
+# 2. Resilient Environment Isolation with Permission Error Catchments
 if os.environ.get('RENDER'):
     db_path = '/var/data/tasks.db'
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    try:
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    except PermissionError:
+        # Fallback to local root project directory if persistent root folder creation is restricted
+        logger.warning("Root storage path creation restricted. Falling back to project root directory configuration.")
+        db_path = 'tasks.db'
 else:
     db_path = 'tasks.db'
 
@@ -95,7 +100,7 @@ def add_task():
         return jsonify({"error": "Task schema requirement violation: Title cannot be empty."}), 400
     if len(title) > 200:
         return jsonify({"error": "Task schema requirement violation: Title exceeds maximum length of 200 characters."}), 400
-    
+        
     new_task = Task(title=title)
     db.session.add(new_task)
     db.session.commit()
