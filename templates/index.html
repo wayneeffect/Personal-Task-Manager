@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager MVP</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Task Tracker</h1>
+            <p>System Engine Instance</p>
+        </header>
+
+        <form id="task-form" class="task-input-area">
+            <input type="text" id="task-input" placeholder="Enter task (max 200 chars)..." maxlength="200" required autocomplete="off">
+            <button type="submit" aria-label="Add Task"><i class="fas fa-plus"></i></button>
+        </form>
+
+        <div class="filters">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="pending">Active</button>
+            <button class="filter-btn" data-filter="completed">Completed</button>
+        </div>
+
+        <ul id="task-list" class="task-list">
+            <!-- Asynchronous Injection Loop -->
+        </ul>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const taskForm = document.getElementById('task-form');
+            const taskInput = document.getElementById('task-input');
+            const taskList = document.getElementById('task-list');
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            
+            let currentFilter = 'all';
+
+            // 1. Centralized Asynchronous Request Engine (Robust Wrapper Pattern)
+            async function apiRequest(url, options = {}) {
+                try {
+                    const response = await fetch(url, options);
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || `System Error HTTP Status: ${response.status}`);
+                    }
+                    return data;
+                } catch (error) {
+                    showUiNotification(error.message);
+                    throw error; // Halts downstream UI rendering routines gracefully
+                }
+            }
+
+            // 2. Client Side Notification UI Toast Component
+            function showUiNotification(message) {
+                let toast = document.getElementById('system-toast');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.id = 'system-toast';
+                    document.body.appendChild(toast);
+                }
+                toast.textContent = `⚠️ Execution halted: ${message}`;
+                toast.classList.add('visible');
+
+                setTimeout(() => {
+                    toast.classList.remove('visible');
+                }, 4500);
+            }
+
+            // 3. UI State Managers
+            async function fetchTasks() {
+                try {
+                    const tasks = await apiRequest('/api/tasks');
+                    renderTasks(tasks);
+                } catch (err) {
+                    taskList.innerHTML = `<li class="empty-state error-text">Data layer sync state offline.</li>`;
+                }
+            }
+
+            function renderTasks(tasks) {
+                taskList.innerHTML = '';
+                
+                const filtered = tasks.filter(task => {
+                    if (currentFilter === 'pending') return !task.completed;
+                    if (currentFilter === 'completed') return task.completed;
+                    return true;
+                });
+
+                if (filtered.length === 0) {
+                    taskList.innerHTML = `<li class="empty-state">No execution items listed.</li>`;
+                    return;
+                }
+
+                filtered.forEach(task => {
+                    const li = document.createElement('li');
+                    li.className = `task-item ${task.completed ? 'completed' : ''}`;
+                    li.innerHTML = `
+                        <div class="task-toggle" data-id="${task.id}" data-status="${task.completed}">
+                            <i class="${task.completed ? 'fas fa-check-circle' : 'far fa-circle'}"></i>
+                            <span>${task.title}</span>
+                        </div>
+                        <button class="delete-btn" data-id="${task.id}" aria-label="Delete Task">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    `;
+                    taskList.appendChild(li);
+                });
+            }
+
+            // 4. Delegated DOM Event Registrations
+            taskForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const title = taskInput.value.trim();
+                if (!title) return;
+
+                try {
+                    await apiRequest('/api/tasks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title })
+                    });
+                    taskInput.value = '';
+                    fetchTasks();
+                } catch (err) { console.error('Task append sequence broken.'); }
+            });
+
+            taskList.addEventListener('click', async (e) => {
+                const toggleTarget = e.target.closest('.task-toggle');
+                const deleteTarget = e.target.closest('.delete-btn');
+
+                if (toggleTarget) {
+                    const id = toggleTarget.dataset.id;
+                    const status = toggleTarget.dataset.status === 'true';
+                    try {
+                        await apiRequest(`/api/tasks/${id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ completed: !status })
+                        });
+                        fetchTasks();
+                    } catch (err) {}
+                }
+
+                if (deleteTarget) {
+                    const id = deleteTarget.dataset.id;
+                    try {
+                        await apiRequest(`/api/tasks/${id}`, { method: 'DELETE' });
+                        fetchTasks();
+                    } catch (err) {}
+                }
+            });
+
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    filterBtns.forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    currentFilter = e.target.dataset.filter;
+                    fetchTasks();
+                });
+            });
+
+            // Initial Bootstrap Pipeline
+            fetchTasks();
+        });
+    </script>
+</body>
+</html>
